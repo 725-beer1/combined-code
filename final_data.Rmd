@@ -1,0 +1,157 @@
+---
+title: "beer"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup}
+getwd()
+setwd("./data_files")
+# required data files: upcber.csv, wber.csv, location.csv
+```
+
+```{r}
+suppressMessages(library(plyr))
+suppressMessages(library(stargazer))
+suppressMessages(library(tidyverse))
+suppressMessages(library(knitr))
+suppressMessages(library(readr))
+suppressMessages(library(dplyr))
+suppressMessages(library(stringr))
+suppressMessages(library(fastDummies))
+suppressMessages(library(glmnet))
+```
+
+# Data Cleaning and Merge Datasets
+```{r, warning=FALSE}
+rm(list=ls())
+upc_beer <- read.csv("upcber.csv") 
+# clean text variable and extract size info from upc file
+upc_beer$split_size = strsplit(upc_beer$SIZE, "/")
+upc_beer$bundle_size <- lapply(upc_beer$split_size, function(x) if (length(x)>1) {x[1]} else {1})
+upc_beer$item_size <- lapply(upc_beer$split_size, function(x) if (length(x)>1) {x[2]} else {x[1]})
+upc_beer$item_size <- gsub(" ", "", upc_beer$item_size)
+unique(upc_beer$item_size)
+upc_beer$item_size_cleaned <- as.numeric(str_extract(upc_beer$item_size, "[0-9]+"))# extract numbers only
+# standardize unit of measuremnt of size : oz
+upc_beer[upc_beer$item_size=='750ML', 'item_size_cleaned'] <- 750/29.57
+upc_beer[upc_beer$item_size=='5.16GA', 'item_size_cleaned'] <- 5.16*128
+
+upc_beer <- within(upc_beer, rm(split_size)) # remove split_size column
+
+# extract premium info from upc file
+upc_beer$if_premium <- str_detect(upc_beer$DESCRIP, 'PREMIUM')
+upc_beer$if_premium <- ifelse(upc_beer$if_premium== 'TRUE', 1, 0)
+
+# merge upc_beer and move_beer
+move_beer <- read.csv("wber.csv")
+data1=merge(upc_beer,move_beer,by="UPC")
+
+# generate holiday variable to determine if the week has a holiday
+data1$holiday=ifelse(data1$WEEK==c(7,11,15,16,23,28,37,42,51,59,63,67,68,75,81,89,95,103,112,116,119,120,128,133,141,147,156,164,168,172,173,180,185,194,199,208,216,220,224,225,232,238,246,251,260,268,272,276,277,284,289,298,303,312,320,324,328,329,336,341,350,356,364,372,377,380,381,389,393),1,0)
+save(data1,file = "data_holiday.Rdata")
+
+# merge with  store location information
+location<-read.csv("location.csv", header = TRUE)
+names(location)[1]= "STORE"
+location<- select(location,1:5)
+holi_loca<-merge(location, data1)
+names(holi_loca)
+# 50165 observations in movement file were droped, because store 140 135 141 142 143 144 146 do not have location information.
+
+# generate sales = price *(move/qty)
+holi_loca$sales = holi_loca$PRICE * (holi_loca$MOVE / holi_loca$QTY)
+print(colnames(holi_loca))
+```
+
+# Summarize Categorical Variables
+```{r , results = "asis"}
+# load merged dataset
+h=holi_loca
+
+# remove trash data
+new=subset(h,h$OK==1)
+
+# remove observations with missing value in any column
+new=na.omit(new)
+
+# clean price.tier  and get summaries
+unique(new$Price.Tier) 
+new$Price.Tier <- gsub(" ", "", new$Price.Tier)
+#Zone
+unique(new$Zone)  
+#Com-code
+unique(new$COM_CODE)
+#case
+unique(new$CASE)
+#move
+unique(new$QTY)
+#SALE
+new$SALE=as.factor(new$SALE)
+levels(new$SALE)[levels(new$SALE)==""] <- "N"
+unique(new$SALE)
+#holiday
+unique(new$holiday)
+
+#summary table
+msenames <- c("price tier", "zone", "com-code", 
+              "case","sale","holiday")
+Number_of_Categories <- c(4,14,3,10,4,2)
+model<-c("yes", "yes","yes","no","yes","yes")
+msetable4 <- data.frame(cbind(msenames, Number_of_Categories,model))
+names(msetable4) <- c("Categorical Variables", "Number of Categories","Include in model")
+kable(msetable4)
+```
+
+# Relation Between Promotion and Holiday
+```{r}
+#The percent of time that is holiday 
+sum(new$holiday)/nrow(new)
+
+#promotion and holiday
+mosaicplot(~ SALE + holiday, data = new, main = "promotion on holidays", shade = TRUE, legend = TRUE)
+```
+
+# summarize numeric variables
+```{r}
+# profit
+hist(new$PROFIT)
+summary(new$PROFIT)
+
+# price
+hist(new$PRICE)
+summary(new$PRICE)
+
+modelprice=lm(PROFIT~PRICE, data=new)
+summary(modelprice)
+
+
+# create a new variable: bundle
+new$bundle=new$MOVE/new$QTY
+
+hist(new$bundle)
+summary(new$bundle)
+
+modelbundle=lm(PROFIT~bundle, data=new)
+summary(modelbundle)
+
+# sale
+hist(new$sales)
+summary(new$sales)
+
+modelsales=lm(PROFIT~sales, data=new)
+summary(modelsales)
+
+# synthesize simple linear regression results
+stargazer(modelprice, modelbundle, modelsales, type = 'html', title = "Summary of Result",nobs = F, flip = T, median = T)
+options(knitr.duplicate.label = "allow")
+```
+
+```{r}
+save(new,file = "final_data.Rdata")
+```
