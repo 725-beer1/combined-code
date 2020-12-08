@@ -1,0 +1,269 @@
+---
+title: "beer"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+```{r , results = "asis"}
+#Yichen
+rm(list=ls())
+load("H:/study/final_data.Rdata")
+h=holi_loca
+#unique(h$DESCRIP)
+#unique(h$COM_CODE)
+#unique(h$Price.Tier)
+#unique(h$SIZE)
+#summary(h)
+new=subset(h,h$OK==1)
+
+#seven summary
+
+new=na.omit(new)
+#price tier
+unique(new$Price.Tier)
+
+#Zone
+unique(new$Zone)
+
+#Com-code
+unique(new$COM_CODE)
+
+#case,not be chose.This is the number of items in the cases coming from the manufacturers, it is not seen by customers
+unique(new$CASE)
+
+#move,not choose,include in sales
+unique(new$QTY)
+
+#SALE
+library(plyr)
+new$SALE=as.factor(new$SALE)
+levels(new$SALE)[levels(new$SALE)==""] <- "N"
+
+unique(new$SALE)
+
+
+#holiday
+unique(new$holiday)
+
+
+
+#summary table
+library(knitr)
+msenames <- c("price tier", "zone", "com-code", 
+              "case","sale","holiday")
+Number_of_Categories <- c(8,14,3,10,4,2)
+model<-c("yes", "yes","yes","no","yes","yes")
+msetable4 <- data.frame(cbind(msenames, Number_of_Categories,model))
+names(msetable4) <- c("Categorical Variables", "Number of Categories","Include in model")
+kable(msetable4)
+
+#library(stargazer)
+#stargazer(msetable4, header = F, title = "Summary of Categorical #Data",nobs = F, flip = T, median = T)
+```
+
+
+```{r}
+#LuLu;PeiRan
+#The percent of time that is holiday 
+sum(new$holiday)/nrow(new)
+
+#promotion and holiday
+library(tidyverse)
+mosaicplot(~ SALE + holiday, data = new, main = "promotion on holidays", shade = TRUE, legend = TRUE)
+```
+
+```{r}
+#LULU,PEIRAN
+#library(tidyr)
+
+#Profit
+hist(new$PROFIT)
+summary(new$PROFIT)
+
+#Price
+hist(new$PRICE)
+summary(new$PRICE)
+
+modelprice=lm(PROFIT~PRICE, data=new)
+summary(modelprice)
+
+#create a bundle variable to make
+new$bundle=new$MOVE/new$QTY
+
+hist(new$bundle)
+summary(new$bundle)
+
+modelbundle=lm(PROFIT~bundle, data=new)
+summary(modelbundle)
+
+#Sales
+hist(new$sales)
+summary(new$sales)
+
+modelsales=lm(PROFIT~sales, data=new)
+summary(modelsales)
+```
+
+```{r star, echo = T, results = "asis"}
+#LULU,PEIRAN
+suppressMessages(library(stargazer))
+stargazer(modelprice, modelbundle, modelsales, title = "Summary of Result",nobs = F, flip = T, median = T)
+#options(knitr.duplicate.label = "allow")
+kable(summary(new[,c("PROFIT","PRICE", "sales")]))
+```
+
+```{r}
+#Yichen
+#random forest
+#x variables:x1=price tier,x2=zone,x3=com_code,x4=price,x5=SALE,x6=holiday
+#,x7=sales,x8=bundle
+#y variable:profit
+#set 80% data into trainning set
+treedata=new[c(3,4,7,15,16,21,22,23,17)]
+unique(treedata$Price.Tier)
+
+#price-tier factor discription
+#1:high;2:medium;3:low;4:cubfighter
+
+#zone factor description
+unique(treedata$Zone)
+#they are all numbers,set into origin numbers
+
+#com_code  description
+unique(treedata$factorCOM_CODE)
+#1:27;2:28;3:26
+
+#SALE
+unique(treedata$SALE)
+#1:N;2:B;3:C;4:S
+
+#holiday
+unique(treedata$holiday)
+
+#
+
+
+#####set the factors
+#set the price.tier to factor variables
+treedata$Price.Tier =factor(treedata$Price.Tier,levels=c("High","Medium","Low","CubFighter","High ","Medium ","Low ","CubFighter "),labels=c(1,2,3,4,1,2,3,4))
+
+#set the zone to factor variables
+treedata$Zone =factor(treedata$Zone,levels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16),labels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16))
+
+#set the com_code to factor variables
+treedata$COM_CODE =factor(treedata$COM_CODE,levels=c(27,28,26),labels=c(1,2,3))
+
+#set the SALE to factor variables
+treedata$SALE =factor(treedata$SALE,levels=c("N","B","C","S"),labels=c(1,2,3,4))
+
+#set the SALE to factor variables
+treedata$holiday =factor(treedata$holiday,levels=c(0,1),labels=c(0,1))
+
+#####set the testdata and traindata sets
+tree_testind=sample(nrow(treedata), size = round(.8*(nrow(treedata))) )
+treetrain =treedata[tree_testind,]
+treetest = treedata[-tree_testind,]
+treetrain=as.data.frame(treetrain)
+treetest=as.data.frame(treetest)
+
+#linear-model
+
+
+####feature scaling,not including the factors
+#treetrain[c(-1,-2,-3,-5,-6,-8)]= scale(treetrain[c(-1,-2,-3,-5,-6,-8)])
+#treetest[c(-1,-2,-3,-5,-6,-8)]= scale(treetest[c(-1,-2,-3,-5,-6,-8)])
+
+
+
+####random forest 
+library(randomForest)
+#10 groups trees
+randomforest = randomForest(x=treetrain[-9],
+                          y=treetrain$PROFIT,
+                          ntree = 3)
+y_pred_randomforest = predict(andomforest, newdata = treetest[-9])
+```
+
+set the factors and classify the profit.
+
+```{r}
+memory.limit()
+memory.limit(300000)
+#x variables:x1=price tier,x2=zone,x3=com_code,x4=price,x5=SALE,x6=holiday
+#,x7=sales,x8=bundle
+#y variable:profit
+#reg_data：data we use in the following different classification model
+reg_data=new[c(3,4,7,15,16,21,22,23,17)]
+unique(reg_data$Price.Tier)
+
+
+#price-tier factor discription
+#1:high;2:medium;3:low;4:cubfighter
+
+#zone factor description
+unique(reg_data$Zone)
+#they are all numbers,set into origin numbers
+
+#com_code  description
+unique(reg_data$COM_CODE)
+#1:27;2:28;3:26
+
+#SALE
+unique(reg_data$SALE)
+#1:N;2:B;3:C;4:S
+
+#holiday
+unique(reg_data$holiday)
+
+#
+#####set the factors
+#set the price.tier to factor variables
+reg_data$Price.Tier =factor(reg_data$Price.Tier,levels=c("High","Medium","Low","CubFighter","High ","Medium ","Low ","CubFighter "),labels=c(1,2,3,4,1,2,3,4))
+
+#set the zone to factor variables
+reg_data$Zone =factor(reg_data$Zone,levels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16),labels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16))
+
+#set the com_code to factor variables
+reg_data$COM_CODE =factor(reg_data$COM_CODE,levels=c(27,28,26),labels=c(1,2,3))
+
+#set the SALE to factor variables
+reg_data$SALE =factor(reg_data$SALE,levels=c("N","B","C","S"),labels=c(1,2,3,4))
+
+#set the SALE to factor variables
+reg_data$holiday =factor(reg_data$holiday,levels=c(0,1),labels=c(0,1))
+
+
+#Calculate the final profit by multiply the profit and sales.
+reg_data$final_profit <- reg_data$PROFIT * reg_data$sales
+
+reg_data$classified_profit<-0
+reg_data[reg_data$final_profit<=0,'classified_profit']<-1
+reg_data[reg_data$final_profit>0 & reg_data$final_profit<=118.40,"classified_profit"]<-2
+reg_data[reg_data$final_profit>118.40 & reg_data$final_profit<=245.8,"classified_profit"]<-3
+reg_data[reg_data$final_profit>245.8 & reg_data$final_profit<=534,"classified_profit"]<-4
+reg_data[reg_data$final_profit>-534 & reg_data$final_profit<=119641 ,"classified_profit"]<-5
+
+classified_profit<- as.factor(reg_data$classified_profit)
+
+#drop final_profit, PROFIT, sales
+reg_data<- reg_data[,-c(10,9,7)]
+
+
+#####set the testdata and traindata sets
+testind=sample(nrow(reg_data), size = round(.8*(nrow(reg_data))) )
+train =reg_data[testind,]
+test = reg_data[-testind,]
+train=as.data.frame(train)
+test=as.data.frame(test)
+
+```
+
+SVM by Peiran
+```{r}
+svmfit =svm(classified_profit~., data=train , kernel =" radial ", cost =10, gamma =1)
+plot(svmfit)
+
+
+
+```
+
