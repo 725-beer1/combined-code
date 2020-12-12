@@ -1,0 +1,187 @@
+---
+title: "beer"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+```{r , results = "asis"}
+rm(list=ls())
+load("~/Desktop/final_data.Rdata")
+h=holi_loca
+#unique(h$DESCRIP)
+#unique(h$COM_CODE)
+#unique(h$Price.Tier)
+#unique(h$SIZE)
+#summary(h)
+new=subset(h,h$OK==1)
+
+#seven summary
+
+new=na.omit(new)
+#price tier
+unique(new$Price.Tier)
+
+#Zone
+unique(new$Zone)
+
+#Com-code
+unique(new$COM_CODE)
+
+#case,not be chose.This is the number of items in the cases coming from the manufacturers, it is not seen by customers
+unique(new$CASE)
+
+#move,not choose,include in sales
+unique(new$QTY)
+
+#SALE
+library(plyr)
+new$SALE=as.factor(new$SALE)
+levels(new$SALE)[levels(new$SALE)==""] <- "N"
+
+unique(new$SALE)
+
+
+#holiday
+unique(new$holiday)
+
+
+#summary table
+library(knitr)
+msenames <- c("price tier", "zone", "com-code", 
+              "case","sale","holiday")
+Number_of_Categories <- c(8,14,3,10,4,2)
+model<-c("yes", "yes","yes","no","yes","yes")
+msetable4 <- data.frame(cbind(msenames, Number_of_Categories,model))
+names(msetable4) <- c("Categorical Variables", "Number of Categories","Include in model")
+kable(msetable4)
+
+new$bundle=new$MOVE/new$QTY
+#Yichen 
+#random forest
+#x variables:x1=price tier,x2=zone,x3=com_code,x4=price,x5=SALE,x6=holiday
+#,x7=sales,x8=bundle
+#y variable:profit
+#set 80% data into trainning set
+
+#treedata=new[c(3,4,7,15,19,20,21,26,25,27,14)]
+treedata=new[c(3,4,7,15,16,21,22,23,17)]
+
+names(treedata)[5]="promotion"
+treedata$final_profit<-treedata$sales*treedata$PROFIT
+quantile(treedata$final_profit)
+summary(treedata$final_profit)
+
+treedata$classified_profit<-0
+treedata[treedata$final_profit<=0,"classified_profit"]<-1
+treedata[treedata$final_profit>0 & treedata$final_profit<=118.40,"classified_profit"]<-2
+treedata[treedata$final_profit>118.40& treedata$final_profit<=245.8,"classified_profit"]<-3
+treedata[treedata$final_profit>245.8& treedata$final_profit<=534,"classified_profit"]<-4
+treedata[treedata$final_profit>534 & treedata$final_profit<=109641 ,"classified_profit"]<-5
+
+unique(treedata$Price.Tier)
+
+
+#price-tier factor discription
+#1:high;2:medium;3:low;4:cubfighter
+
+#zone factor description
+unique(treedata$Zone)
+#they are all numbers,set into origin numbers
+
+#com_code  description
+unique(treedata$factorCOM_CODE)
+#1:27;2:28;3:26
+
+#SALE
+unique(treedata$SALE)
+#1:N;2:B;3:C;4:S
+
+#holiday
+unique(treedata$holiday)
+
+#
+
+
+#####set the factors
+#set the price.tier to factor variables
+
+#add a factor variable(final_profit)
+treedata$classified_profit =factor(treedata$classified_profit,levels=c(1,2,3,4,5),labels=c(1,2,3,4,5))
+
+treedata$Price.Tier =factor(treedata$Price.Tier,levels=c("High","Medium","Low","CubFighter","High ","Medium ","Low ","CubFighter "),labels=c(1,2,3,4,1,2,3,4))
+#treedata$Price.Tier=as.numeric(treedata$Price.Tier)
+
+
+#set the zone to factor variables
+treedata$Zone =factor(treedata$Zone,levels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16),labels=c(1,2,5,7,6,3,4,10, 8,12,11,15,14,16))
+#treedata$Zone=as.numeric(treedata$Zone)
+
+#set the com_code to factor variables
+treedata$COM_CODE =factor(treedata$COM_CODE,levels=c(27,28,26),labels=c(1,2,3))
+#treedata$COM_CODE=as.numeric(treedata$COM_CODE)
+
+#set the SALE to factor variables
+treedata$promotion =factor(treedata$promotion,levels=c("N","B","C","S"),labels=c(1,2,3,4))
+#treedata$promotion=as.numeric(treedata$promotion)
+#treedata$if_premium =factor(treedata$if_premium,levels=c(0,1),labels=c(0,1))
+
+####as numeric
+
+#set the SALE to factor variables
+treedata$holiday =factor(treedata$holiday,levels=c(0,1),labels=c(0,1))
+
+#####set the testdata and traindata sets
+set.seed(0)
+tree_testind=sample(nrow(treedata), size = round(.8*(nrow(treedata))) )
+treetrain =treedata[tree_testind,]
+treetest = treedata[-tree_testind,]
+treetrain=as.data.frame(treetrain)
+treetest=as.data.frame(treetest)
+
+
+x=treetrain[, 1:8]
+y=treetrain[,11]
+
+set.seed(0)
+h2o.init()
+h2o.train=as.h2o(treetrain)
+h2o.test=as.h2o(treetest)
+
+neural_net_y1=h2o.deeplearning(x=c("Price.Tier","Zone","COM_CODE","PRICE","promotion","holiday","sales","bundle"),y="classified_profit",training_frame=h2o.train,
+                               validation_frame = h2o.test,hidden=c(16,32,64),epochs = 100)
+neural_net_y2=h2o.deeplearning(x=c("Price.Tier","Zone","COM_CODE","PRICE","promotion","holiday","sales","bundle"),y="classified_profit",training_frame=h2o.train,
+                               validation_frame = h2o.test,hidden=c(16,32),epochs = 100)
+localH2O = h2o.init(ip = "localhost", port = 54321, startH2O = TRUE)
+
+mse_y1_NN=h2o.mse(neural_net_y1)
+mse_y2_NN=h2o.mse(neural_net_y2)
+rmse_y1_NN=h2o.rmse(neural_net_y1)
+rmse_y2_NN=h2o.rmse(neural_net_y2)
+
+prob_pred = h2o.predict(neural_net_y2, newdata = as.h2o(treetrain[-11]))
+y_pred = (prob_pred > 0.5)
+y_pred = as.vector(y_pred)
+
+# Making the F1 score
+f1_fun = function(pre, y) {class = sort(unique(y))
+tp = NA
+fp = NA
+fn = NA
+for (i in 1:length(class)){
+  tp[i] = sum(pre==class[i] & y==class[i])
+  fp[i] = sum(pre==class[i] & y!=class[i])
+  fn[i] = sum(pre!= class[i]& y==class[i])
+  
+}
+f1 = 2*tp/(2*tp +fp +fn)
+names(f1) = class
+print(table(pre,y))
+print("f1")
+print(f1)
+print("meanf1")
+print(mean(f1))}
+
+pre_result = tree_testind
+  y_true = y
+  f1_fun(pre_result, y_true)
+```
